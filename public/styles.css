@@ -1,0 +1,40 @@
+:root { --bg:#0d1117; --card:#161b22; --text:#e6edf3; --muted:#8b949e; --accent:#27ae60; --danger:#e74c3c; }
+*{ box-sizing:border-box; }
+body{ margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+.wrap{ max-width:680px; margin:0 auto; padding:16px; }
+header{ text-align:center; margin:12px 0 16px; }
+h1{ margin:0; font-size:24px; }
+small{ color:var(--muted); }
+
+.card{ background:var(--card); border:1px solid #30363d; border-radius:14px; padding:16px; box-shadow:0 2px 12px rgba(0,0,0,.25); }
+.center{ text-align:center; }
+.row{ display:flex; gap:8px; align-items:center; }
+.row.spread{ justify-content:space-between; }
+.grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+@media (min-width:520px){ .grid{ grid-template-columns:repeat(3,1fr);} }
+
+label{ font-size:14px; color:var(--muted); }
+input{ width:100%; padding:10px 12px; border-radius:10px; border:1px solid #30363d; background:#0b0f14; color:var(--text); }
+button{ padding:10px 12px; border:1px solid #30363d; background:#0b0f14; color:var(--text); border-radius:10px; cursor:pointer; }
+button.primary{ background:var(--accent); border-color:transparent; color:#03140a; font-weight:700; }
+button:disabled{ opacity:.6; cursor:not-allowed; }
+
+.pillbox{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.pill{ padding:6px 10px; border-radius:999px; background:#0b0f14; border:1px solid #30363d; font-size:14px; }
+.pill.on{ outline:2px solid rgba(39,174,96,.35); }
+.pill.off{ opacity:.6; }
+
+.badge{ display:inline-block; padding:6px 10px; border-radius:999px; background:#0b0f14; border:1px solid #30363d; }
+.badge.danger{ background:#180b0b; border-color:#3a1515; color:#ffb3b3; }
+.secret{ font-size:22px; margin:12px 0; }
+.tip{ color:var(--muted); }
+
+.feed{ height:40vh; overflow:auto; display:flex; flex-direction:column; gap:8px; background:#0b0f14; border:1px solid #30363d; border-radius:10px; padding:8px; }
+.clue{ display:flex; gap:8px; }
+.clue strong{ background:#11161d; padding:4px 8px; border-radius:999px; }
+
+.hint{ color:var(--muted); margin-top:8px; font-size:14px; }
+.hidden{ display:none; }
+.switch{ display:flex; align-items:center; gap:6px; }
+#timer{ background:#0b0f14; padding:6px 10px; border-radius:999px; border:1px solid #30363d; }
+.voteBtn{ background:#11161d; border:1px solid #30363d; padding:12px; border-radius:12px; font-weight:700; }

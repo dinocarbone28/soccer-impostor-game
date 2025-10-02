@@ -1,4 +1,26 @@
-import express from 'express';
+npm start
+
+const room = {
+  code,
+  hostId: socket.id,
+  maxPlayers: Math.max(3, Math.min(Number(maxPlayers) || 8, 12)),
+  phase: 'lobby',
+  players: {},
+  impostorId: null,
+  votes: {}
+};
+const room = {
+  code,
+  hostId: socket.id,
+  maxPlayers: Math.max(3, Math.min(Number(maxPlayers) || 8, 12)),
+  phase: 'lobby',
+  players: {},
+  impostorId: null,
+  secretCard: null,   // 👈 NEW
+  votes: {}
+};
+import 
+express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import crypto from 'crypto';
@@ -9,7 +31,7 @@ const io = new Server(httpServer, { cors: { origin: '*' } });
 
 app.use(express.static('public'));
 
-// ---- Soccer DB ----
+// ----- Soccer DB (from your spec) -----
 const DB = {
   forwards: ['Lionel Messi','Kylian Mbappé','Erling Haaland','Vinícius Júnior','Mohamed Salah','Harry Kane','Jude Bellingham','Lautaro Martínez','Antoine Griezmann','Robert Lewandowski','Son Heung-min','Bukayo Saka','Jamal Musiala','Florian Wirtz','Rafael Leão','Khvicha Kvaratskhelia','Rodrygo','Ousmane Dembélé','Leroy Sané','Kingsley Coman','Marcus Rashford','Jack Grealish','Christopher Nkunku','Kai Havertz','João Félix','Darwin Núñez','Victor Osimhen','Alexander Isak','Randal Kolo Muani','Dusan Vlahović','Álvaro Morata','Federico Chiesa','Julián Álvarez','Paulo Dybala','Ángel Di María','Kenan Yıldız','Dayro Moreno'],
   mids: ['Kevin De Bruyne','Bernardo Silva','Martin Ødegaard','Bruno Fernandes','Federico Valverde','Pedri','Gavi','Frenkie de Jong','Ilkay Gündoğan','Toni Kroos','Luka Modrić','Declan Rice','Casemiro','Adrien Rabiot','Nicolo Barella','Hakan Çalhanoğlu','Sandro Tonali','Sergej Milinković-Savić','James Maddison','Mason Mount','Dominic Szoboszlai','Dani Olmo','Youssouf Fofana','Aurélien Tchouaméni','Eduardo Camavinga','Marco Verratti','Martin Zubimendi','Mikel Merino','Alexis Mac Allister','Enzo Fernández','Moisés Caicedo','João Palhinha','Teun Koopmeiners','Scott McTominay','Weston McKennie','Christian Pulisic','Giovanni Reyna','Luis Díaz','Rodrigo De Paul','Leandro Paredes'],
@@ -18,16 +40,19 @@ const DB = {
   gks: ['Emiliano "Dibu" Martínez','Thibaut Courtois','Alisson Becker','Ederson','Mike Maignan','Marc-André ter Stegen','Jan Oblak','André Onana','Diogo Costa','Yassine Bounou'],
   rising: ['Nico Williams','Khéphren Thuram','Alejandro Garnacho','Cole Palmer','Xavi Simons','Rodrigo Bentancur','Nicolò Fagioli','João Neves','Lamine Yamal']
 };
-
-// ---- Helpers / rooms ----
+// ----- helpers / room state -----
 const rooms = new Map();
-const rint = (n) => crypto.randomInt(0, n);
-function genCode(){ const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c=''; for(let i=0;i<4;i++) c+=A[rint(A.length)]; return rooms.has(c)?genCode():c; }
-function chooseImpostor(ids){ return ids[rint(ids.length)]; }
-function randomCard(){
-  const pools=[DB.forwards,DB.mids,DB.defenders,DB.fullbacks,DB.gks,DB.rising];
-  const pool=pools[rint(pools.length)];
-  return pool[rint(pool.length)];
+const randInt = (n) => crypto.randomInt(0, n);
+function genCode() {
+  const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c=''; for (let i=0;i<4;i++) c += a[randInt(a.length)];
+  return rooms.has(c) ? genCode() : c;
+}
+function chooseImpostor(ids){ return ids[randInt(ids.length)]; }
+function randomCard() {
+  const pools = [DB.forwards, DB.mids, DB.defenders, DB.fullbacks, DB.gks, DB.rising];
+  const pool = pools[randInt(pools.length)];
+  return pool[randInt(pool.length)];
 }
 function sanitize(room, viewerId){
   return {
@@ -36,7 +61,7 @@ function sanitize(room, viewerId){
     youAreHost: viewerId===room.hostId,
     maxPlayers: room.maxPlayers,
     phase: room.phase,
-    players: Object.values(room.players).map(p=>({ id:p.id, nickname:p.nickname, connected:p.connected }))
+    players: Object.values(room.players).map(p=>({id:p.id,nickname:p.nickname,connected:p.connected}))
   };
 }
 function broadcast(room){
@@ -46,18 +71,13 @@ function broadcast(room){
 }
 
 io.on('connection', (socket) => {
-
   socket.on('create-room', ({ nickname, maxPlayers }) => {
     const code = genCode();
     const room = {
-      code,
-      hostId: socket.id,
+      code, hostId: socket.id,
       maxPlayers: Math.max(3, Math.min(Number(maxPlayers)||8, 12)),
       phase: 'lobby',
-      players: {},
-      impostorId: null,
-      secretCard: null,   // ONE shared player
-      votes: {}
+      players: {}, impostorId: null, votes:{}
     };
     rooms.set(code, room);
     socket.join(code);
@@ -83,61 +103,45 @@ io.on('connection', (socket) => {
     if (socket.id !== room.hostId) return socket.emit('error-msg','Only host can start.');
     const active = Object.values(room.players).filter(p=>p.connected).map(p=>p.id);
     if (active.length < 3) return socket.emit('error-msg','Need at least 3 players.');
-
-    room.secretCard = randomCard();           // one shared player
-    room.impostorId = chooseImpostor(active); // pick impostor
-    room.phase = 'playing';
-
+    room.impostorId = chooseImpostor(active);
+    room.phase='playing';
     for (const pid of active){
       const role = pid===room.impostorId ? 'impostor' : 'crewmate';
-      room.players[pid].role = role;
-      const cardForPlayer = role==='crewmate' ? room.secretCard : null; // impostor gets null
-      room.players[pid].card = cardForPlayer;
-      io.to(pid).emit('role', { role, card: cardForPlayer }); // private
+      const card = randomCard();
+      room.players[pid].role = role; room.players[pid].card = card;
+      io.to(pid).emit('role', { role, card }); // private
     }
     broadcast(room);
   });
 
   socket.on('submit-hint', ({ code, text }) => {
-    const room = rooms.get((code||'').toUpperCase());
-    if (!room || room.phase!=='playing') return;
+    const room = rooms.get((code||'').toUpperCase()); if (!room || room.phase!=='playing') return;
     io.to(room.code).emit('hint', { id: crypto.randomUUID(), text: String(text||'').slice(0,160) });
   });
 
   socket.on('call-meeting', ({ code }) => {
     const room = rooms.get((code||'').toUpperCase()); if (!room || room.phase!=='playing') return;
-    room.phase = 'meeting'; room.votes = {};
-    io.to(room.code).emit('meeting-start');
-    broadcast(room);
+    room.phase='meeting'; room.votes={}; io.to(room.code).emit('meeting-start'); broadcast(room);
   });
 
   socket.on('cast-vote', ({ code, targetId }) => {
     const room = rooms.get((code||'').toUpperCase()); if (!room || room.phase!=='meeting') return;
     if (!room.players[targetId]) return;
-    room.votes[socket.id] = targetId;
-
-    const activeIds = Object.values(room.players).filter(p=>p.connected).map(p=>p.id);
-    io.to(room.code).emit('vote-update', { count: Object.values(room.votes).length, total: activeIds.length });
-
-    if (Object.values(room.votes).length >= activeIds.length){
-      const tally = {};
-      for (const v of Object.values(room.votes)) tally[v] = (tally[v]||0)+1;
-      let ejected=null, max=-1; for (const [pid,c] of Object.entries(tally)){ if (c>max){max=c; ejected=pid;} }
-      const impostorCaught = ejected === room.impostorId;
-      io.to(room.code).emit('meeting-result', { ejected, impostorCaught });
-
-      if (impostorCaught){
-        room.phase='ended';
-        io.to(room.code).emit('game-over', { winners:'crewmates', impostorId: room.impostorId });
-      } else {
+    room.votes[socket.id]=targetId;
+    const active = Object.values(room.players).filter(p=>p.connected).map(p=>p.id);
+    const votes = Object.values(room.votes).length;
+    io.to(room.code).emit('vote-update', { count:votes, total:active.length });
+    if (votes >= active.length){
+      const tally={}; for (const v of Object.values(room.votes)) tally[v]=(tally[v]||0)+1;
+      let ejected=null,max=-1; for (const [pid,c] of Object.entries(tally)){ if (c>max){max=c;ejected=pid;} }
+      const impostorCaught = ejected===room.impostorId;
+      io.to(room.code).emit('meeting-result',{ ejected, impostorCaught });
+      if (impostorCaught){ room.phase='ended'; io.to(room.code).emit('game-over',{ winners:'crewmates', impostorId:room.impostorId }); }
+      else {
         if (room.players[ejected]) room.players[ejected].connected=false;
         const remaining = Object.values(room.players).filter(p=>p.connected).length;
-        if (remaining < 3){
-          room.phase='ended';
-          io.to(room.code).emit('game-over', { winners:'impostor', impostorId: room.impostorId, reason:'not-enough-players' });
-        } else {
-          room.phase='playing';
-        }
+        if (remaining<3){ room.phase='ended'; io.to(room.code).emit('game-over',{ winners:'impostor', impostorId:room.impostorId, reason:'not-enough-players' }); }
+        else room.phase='playing';
       }
       broadcast(room);
     }
@@ -151,18 +155,11 @@ io.on('connection', (socket) => {
           const next = Object.values(room.players).find(p=>p.connected);
           if (next) room.hostId = next.id;
         }
-        const active = Object.values(room.players).filter(p=>p.connected).length;
-        if (active === 0) {
-          rooms.delete(room.code);
-        } else if (room.phase!=='ended' && active < 3){
-          room.phase='ended';
-          io.to(room.code).emit('game-over', { winners:'impostor', reason:'not-enough-players' });
-        }
-        broadcast(room);
+        const any = Object.values(room.players).some(p=>p.connected);
+        if (!any) rooms.delete(room.code); else broadcast(room);
       }
     }
   });
-
 });
 
 const PORT = process.env.PORT || 3000;

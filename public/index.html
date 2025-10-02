@@ -1,111 +1,88 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Soccer Impostor</title>
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <style>
-    :root { --bg:#0c1116; --card:#121923; --muted:#6b7785; --accent:#19c37d; --danger:#ff5b5b; --text:#e6edf3; }
-    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial}
-    .wrap{max-width:840px;margin:0 auto;padding:16px}
-    .card{background:var(--card);border:1px solid #1e2732;border-radius:16px;padding:16px}
-    .row{display:flex;gap:12px;flex-wrap:wrap}
-    input,button{width:100%;padding:12px;border-radius:12px;border:1px solid #2a3645;background:#0d131a;color:var(--text)}
-    button.primary{background:var(--accent);color:#0b1117;border-color:#19c37d;font-weight:700}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
-    .pill{background:#0b131a;border:1px solid #243041;border-radius:999px;padding:8px 12px;color:var(--muted)}
-    .muted{color:var(--muted)}
-  </style>
+  <link rel="stylesheet" href="/styles.css" />
+  <script defer src="/socket.io/socket.io.js"></script>
+  <script defer src="/client.js"></script>
 </head>
 <body>
-  <div class="wrap">
-    <h1>⚽️ Soccer Impostor</h1>
-    <div id="view" class="card"></div>
-  </div>
-  <script>
-    const socket = io();
-    let state = { code:null, youAreHost:false, phase:'lobby', players:[], role:null, card:null };
-    const $ = s => document.querySelector(s);
+  <div id="app" class="wrap">
+    <header>
+      <h1>⚽ Soccer Impostor</h1>
+      <small>Mobile-ready party game</small>
+    </header>
 
-    function render(){
-      const root = $('#view'); const {code,youAreHost,phase,players}=state; root.innerHTML='';
-      if (!code){
-        root.innerHTML = `
+    <section id="join">
+      <div class="card">
+        <label>Display name</label>
+        <input id="name" placeholder="Your name" maxlength="20" />
+        <label>Room code (or create)</label>
+        <div class="row">
+          <input id="code" placeholder="e.g. ABC12" maxlength="6" />
+          <button id="create">Create</button>
+        </div>
+        <button id="joinBtn" class="primary">Join</button>
+        <p class="hint">Share the room code with friends to play remotely.</p>
+      </div>
+    </section>
+
+    <section id="lobby" class="hidden">
+      <div class="card">
+        <h2>Lobby <span id="lobbyCode"></span></h2>
+        <div id="players" class="pillbox"></div>
+        <div id="hostTools" class="hidden">
           <div class="row">
-            <div class="card" style="flex:1">
-              <h2>Create Room</h2>
-              <div class="row">
-                <input id="nickname-create" placeholder="Your nickname" />
-                <input id="maxp" type="number" min="3" max="12" value="8" />
-                <button class="primary" id="btn-create">Create</button>
-              </div>
-            </div>
-            <div class="card" style="flex:1">
-              <h2>Join Room</h2>
-              <div class="row">
-                <input id="nickname-join" placeholder="Your nickname" />
-                <input id="roomcode" placeholder="Room code (e.g., 7KQ2)" />
-                <button class="primary" id="btn-join">Join</button>
-              </div>
-            </div>
-          </div>`;
-        $('#btn-create').onclick=()=>{ const nickname=$('#nickname-create').value.trim()||'Player'; const maxPlayers=parseInt($('#maxp').value,10)||8; socket.emit('create-room',{nickname,maxPlayers}); };
-        $('#btn-join').onclick=()=>{ const nickname=$('#nickname-join').value.trim()||'Player'; const code=($('#roomcode').value||'').trim().toUpperCase(); socket.emit('join-room',{code,nickname}); };
-        return;
-      }
-      const header=document.createElement('div'); header.className='row';
-      header.innerHTML=`<div class="pill">Room <b>${code}</b></div><div class="pill">Players: ${players.filter(p=>p.connected).length}</div><div class="pill ${youAreHost?'':'muted'}">${youAreHost?'You are host':'Participant'}</div>`;
-      root.appendChild(header);
+            <label>Clue seconds</label>
+            <input id="clueSeconds" type="number" min="15" max="180" value="60" />
+            <label class="switch"><input id="allowChat" type="checkbox" checked>Allow Chat</label>
+          </div>
+          <button id="start" class="primary">Start Game</button>
+        </div>
+      </div>
+    </section>
 
-      const title=document.createElement('h2'); title.textContent=phase==='lobby'?'Lobby':'Game'; root.appendChild(title);
+    <section id="role" class="hidden">
+      <div class="card center">
+        <div id="roleBadge" class="badge">Role</div>
+        <div id="secret" class="secret">?</div>
+        <p id="roleTip" class="tip"></p>
+      </div>
+    </section>
 
-      const list=document.createElement('div'); list.className='grid';
-      for (const p of players){
-        const c=document.createElement('div'); c.className='card';
-        c.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><div style="width:10px;height:10px;border-radius:999px;background:${p.connected?'#19c37d':'#ff5b5b'}"></div><b>${p.nickname||'Player'}</b></div>`;
-        list.appendChild(c);
-      }
-      root.appendChild(list);
+    <section id="clues" class="hidden">
+      <div class="card">
+        <div class="row spread">
+          <h2>Clues</h2>
+          <div id="timer">60</div>
+        </div>
+        <div id="clueList" class="feed"></div>
+        <div class="row">
+          <input id="clueInput" placeholder="Drop a subtle clue…" maxlength="140" />
+          <button id="sendClue">Send</button>
+        </div>
+        <div id="hostClues" class="hidden">
+          <button id="endClues">End Clues → Vote</button>
+        </div>
+      </div>
+    </section>
 
-      if (phase==='lobby' && youAreHost){
-        const b=document.createElement('button'); b.className='primary'; b.textContent='Start Game'; b.onclick=()=>socket.emit('start-game',{code}); root.appendChild(b);
-      }
+    <section id="vote" class="hidden">
+      <div class="card">
+        <h2>Vote the Impostor</h2>
+        <div id="voteList" class="grid"></div>
+      </div>
+    </section>
 
-      if (phase==='playing'){
-        const rc=document.createElement('div'); rc.className='card';
-        rc.innerHTML=`<div class="muted">Your role</div><h3>${(state.role||'').toUpperCase()}</h3><div class="muted">Your soccer card</div><h3>${state.card||'-'}</h3>`;
-        root.appendChild(rc);
-
-        const hintRow=document.createElement('div'); hintRow.className='row';
-        hintRow.innerHTML=`<input id="hint" maxlength="160" placeholder="Drop a short hint (no names!)"/><button class="primary" id="send-hint">Send hint</button><button id="btn-meeting">Call meeting</button>`;
-        root.appendChild(hintRow);
-        $('#send-hint').onclick=()=>{ const t=$('#hint').value.trim(); if(!t) return; $('#hint').value=''; socket.emit('submit-hint',{code,text:t}); };
-        $('#btn-meeting').onclick=()=>socket.emit('call-meeting',{code});
-
-        const feed=document.createElement('div'); feed.id='feed'; feed.className='card'; feed.innerHTML='<h3>Hint feed</h3>'; root.appendChild(feed);
-      }
-
-      if (phase==='meeting'){
-        const m=document.createElement('div'); m.className='card';
-        m.innerHTML='<h3>Emergency Meeting</h3><div class="muted">Vote who you think is the impostor.</div>';
-        const list=document.createElement('div'); list.className='grid';
-        for (const p of players.filter(p=>p.connected)){ const b=document.createElement('button'); b.textContent=p.nickname; b.onclick=()=>socket.emit('cast-vote',{code,targetId:p.id}); list.appendChild(b); }
-        m.appendChild(list); const t=document.createElement('div'); t.id='tally'; t.className='muted'; t.style.marginTop='8px'; m.appendChild(t); root.appendChild(m);
-      }
-    }
-
-    socket.on('room-joined', ({code})=>{ state.code=code; render(); });
-    socket.on('room-update', (data)=>{ state={...state,...data}; render(); });
-    socket.on('role', ({role,card})=>{ state.role=role; state.card=card; render(); });
-    socket.on('hint', ({text})=>{ const f=document.getElementById('feed'); if(f){ const r=document.createElement('div'); r.className='card'; r.style.marginTop='8px'; r.textContent=text; f.appendChild(r); f.scrollTop=f.scrollHeight; }});
-    socket.on('meeting-start', ()=>{ state.phase='meeting'; render(); });
-    socket.on('vote-update', ({count,total})=>{ const t=document.getElementById('tally'); if(t) t.textContent=`Votes: ${count}/${total}`; });
-    socket.on('meeting-result', ({ejected,impostorCaught})=>{ alert(`Ejected: ${state.players.find(p=>p.id===ejected)?.nickname||'Unknown'}\nImpostor caught: ${impostorCaught?'Yes':'No'}`); });
-    socket.on('game-over', ({winners})=>alert(`Game over — ${winners} win!`));
-    socket.on('error-msg', (m)=>alert(m));
-
-    render();
-  </script>
+    <section id="reveal" class="hidden">
+      <div class="card center">
+        <h2>Reveal</h2>
+        <div id="revealText"></div>
+        <button id="backToLobby">Back to Lobby</button>
+      </div>
+    </section>
+  </div>
 </body>
 </html>
