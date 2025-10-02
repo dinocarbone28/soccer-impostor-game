@@ -1,169 +1,210 @@
 import express from 'express';
-import { createServer } from 'http';
+import http from 'http';
 import { Server } from 'socket.io';
 import crypto from 'crypto';
 
 const app = express();
-const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: '*' } });
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
 
 app.use(express.static('public'));
+app.get('/healthz', (req, res) => res.status(200).send('ok'));
 
-// ---- Soccer DB ----
+// ===== Soccer Player Database =====
 const DB = {
   forwards: ['Lionel Messi','Kylian Mbappé','Erling Haaland','Vinícius Júnior','Mohamed Salah','Harry Kane','Jude Bellingham','Lautaro Martínez','Antoine Griezmann','Robert Lewandowski','Son Heung-min','Bukayo Saka','Jamal Musiala','Florian Wirtz','Rafael Leão','Khvicha Kvaratskhelia','Rodrygo','Ousmane Dembélé','Leroy Sané','Kingsley Coman','Marcus Rashford','Jack Grealish','Christopher Nkunku','Kai Havertz','João Félix','Darwin Núñez','Victor Osimhen','Alexander Isak','Randal Kolo Muani','Dusan Vlahović','Álvaro Morata','Federico Chiesa','Julián Álvarez','Paulo Dybala','Ángel Di María','Kenan Yıldız','Dayro Moreno'],
-  mids: ['Kevin De Bruyne','Bernardo Silva','Martin Ødegaard','Bruno Fernandes','Federico Valverde','Pedri','Gavi','Frenkie de Jong','Ilkay Gündoğan','Toni Kroos','Luka Modrić','Declan Rice','Casemiro','Adrien Rabiot','Nicolo Barella','Hakan Çalhanoğlu','Sandro Tonali','Sergej Milinković-Savić','James Maddison','Mason Mount','Dominic Szoboszlai','Dani Olmo','Youssouf Fofana','Aurélien Tchouaméni','Eduardo Camavinga','Marco Verratti','Martin Zubimendi','Mikel Merino','Alexis Mac Allister','Enzo Fernández','Moisés Caicedo','João Palhinha','Teun Koopmeiners','Scott McTominay','Weston McKennie','Christian Pulisic','Giovanni Reyna','Luis Díaz','Rodrigo De Paul','Leandro Paredes'],
+  midfielders: ['Kevin De Bruyne','Bernardo Silva','Martin Ødegaard','Bruno Fernandes','Federico Valverde','Pedri','Gavi','Frenkie de Jong','Ilkay Gündoğan','Toni Kroos','Luka Modrić','Declan Rice','Casemiro','Adrien Rabiot','Nicolo Barella','Hakan Çalhanoğlu','Sandro Tonali','Sergej Milinković-Savić','James Maddison','Mason Mount','Dominic Szoboszlai','Dani Olmo','Youssouf Fofana','Aurélien Tchouaméni','Eduardo Camavinga','Marco Verratti','Martin Zubimendi','Mikel Merino','Alexis Mac Allister','Enzo Fernández','Moisés Caicedo','João Palhinha','Teun Koopmeiners','Scott McTominay','Weston McKennie','Christian Pulisic','Giovanni Reyna','Luis Díaz','Rodrigo De Paul','Leandro Paredes'],
   defenders: ['Virgil van Dijk','Rúben Dias','Marquinhos','Éder Militão','David Alaba','William Saliba','Josko Gvardiol','Antonio Rüdiger','Matthijs de Ligt','Milan Škriniar','Kim Min-jae','Dayot Upamecano','Ronald Araújo','Jules Koundé','Raphaël Varane','Pau Cubarsí','Alejandro Balde','Giovanni Di Lorenzo','Khéphren Thuram','Joshua Kimmich','Leon Goretzka','Benjamin Pavard','Raphael Guerreiro'],
   fullbacks: ['João Cancelo','Trent Alexander-Arnold','Andrew Robertson','Achraf Hakimi','Theo Hernández','Alphonso Davies','Reece James','Dani Carvajal'],
-  gks: ['Emiliano "Dibu" Martínez','Thibaut Courtois','Alisson Becker','Ederson','Mike Maignan','Marc-André ter Stegen','Jan Oblak','André Onana','Diogo Costa','Yassine Bounou'],
+  goalkeepers: ['Emiliano "Dibu" Martínez','Thibaut Courtois','Alisson Becker','Ederson','Mike Maignan','Marc-André ter Stegen','Jan Oblak','André Onana','Diogo Costa','Yassine Bounou'],
   rising: ['Nico Williams','Khéphren Thuram','Alejandro Garnacho','Cole Palmer','Xavi Simons','Rodrigo Bentancur','Nicolò Fagioli','João Neves','Lamine Yamal']
 };
+const flatPlayers = () => [...DB.forwards, ...DB.midfielders, ...DB.defenders, ...DB.fullbacks, ...DB.goalkeepers, ...DB.rising];
 
-// ---- Helpers / rooms ----
+// ===== Room state =====
 const rooms = new Map();
-const rint = (n) => crypto.randomInt(0, n);
-function genCode(){ const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c=''; for(let i=0;i<4;i++) c+=A[rint(A.length)]; return rooms.has(c)?genCode():c; }
-function chooseImpostor(ids){ return ids[rint(ids.length)]; }
-function randomCard(){
-  const pools=[DB.forwards,DB.mids,DB.defenders,DB.fullbacks,DB.gks,DB.rising];
-  const pool=pools[rint(pools.length)];
-  return pool[rint(pool.length)];
-}
-function sanitize(room, viewerId){
-  return {
-    code: room.code,
-    hostId: room.hostId,
-    youAreHost: viewerId===room.hostId,
-    maxPlayers: room.maxPlayers,
-    phase: room.phase,
-    players: Object.values(room.players).map(p=>({ id:p.id, nickname:p.nickname, connected:p.connected }))
-  };
-}
-function broadcast(room){
-  for (const pid of Object.keys(room.players)){
-    io.to(pid).emit('room-update', sanitize(room, pid));
+
+const randInt = (max) => crypto.randomInt(0, max);
+const pick = (arr) => arr[randInt(arr.length)];
+const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const genRoomCode = () => Array.from({length:5},()=>alphabet[randInt(alphabet.length)]).join('');
+const genUniqueRoomCode = () => { let c=genRoomCode(); while (rooms.has(c)) c=genRoomCode(); return c; };
+
+function ensureRoom(code) {
+  if (!rooms.has(code)) {
+    rooms.set(code, {
+      code,
+      hostId: null,
+      createdAt: Date.now(),
+      players: new Map(), // socketId -> {name, uuid, connected}
+      uuidIndex: new Map(), // uuid -> socketId
+      phase: 'lobby',
+      minPlayers: 3,
+      maxPlayers: 12,
+      chosenPlayer: null,
+      impostorId: null,
+      round: 0,
+      votes: new Map(),
+      settings: { clueSeconds: 60, allowChat: true }
+    });
   }
+  return rooms.get(code);
+}
+const publicPlayerList = (room) =>
+  Array.from(room.players.entries()).map(([id,p]) => ({ id, name: p.name, connected: p.connected }));
+
+function broadcastState(room) {
+  io.to(room.code).emit('state:update', {
+    phase: room.phase,
+    players: publicPlayerList(room),
+    settings: room.settings,
+    round: room.round
+  });
+}
+
+function startGame(room) {
+  const ids = Array.from(room.players.keys()).filter(id => room.players.get(id).connected);
+  if (ids.length < room.minPlayers) throw new Error('Not enough players (need at least 3).');
+  room.phase = 'clues';
+  room.round += 1;
+  room.chosenPlayer = pick(flatPlayers());
+  room.impostorId = ids[randInt(ids.length)];
+  room.votes.clear();
+
+  for (const id of ids) {
+    if (id === room.impostorId) io.to(id).emit('secret:role', { role:'IMPOSTOR', player:null });
+    else io.to(id).emit('secret:role', { role:'CIVILIAN', player: room.chosenPlayer });
+  }
+  io.to(room.code).emit('phase:clues:start', { seconds: room.settings.clueSeconds });
+  broadcastState(room);
+}
+function endClues(room) {
+  room.phase = 'vote';
+  room.votes.clear();
+  io.to(room.code).emit('phase:vote:start', { players: publicPlayerList(room) });
+  broadcastState(room);
+}
+function resolveVote(room) {
+  const tally = new Map();
+  for (const target of room.votes.values()) tally.set(target, (tally.get(target)||0)+1);
+  let max=-1, suspect=null;
+  for (const [t,c] of tally.entries()) { if (c>max) { max=c; suspect=t; } }
+  const impostorCaught = suspect === room.impostorId;
+  room.phase = 'reveal';
+  io.to(room.code).emit('phase:reveal', {
+    impostorId: room.impostorId,
+    impostorName: room.players.get(room.impostorId)?.name || 'Unknown',
+    playerName: room.chosenPlayer,
+    impostorCaught
+  });
+  broadcastState(room);
 }
 
 io.on('connection', (socket) => {
-
-  socket.on('create-room', ({ nickname, maxPlayers }) => {
-    const code = genCode();
-    const room = {
-      code,
-      hostId: socket.id,
-      maxPlayers: Math.max(3, Math.min(Number(maxPlayers)||8, 12)),
-      phase: 'lobby',
-      players: {},
-      impostorId: null,
-      secretCard: null,   // ONE shared player
-      votes: {}
-    };
-    rooms.set(code, room);
-    socket.join(code);
-    room.players[socket.id] = { id: socket.id, nickname, connected:true, role:'unknown', card:null };
-    socket.emit('room-joined', { code });
-    broadcast(room);
+  // Create a room on the server (host will join next)
+  socket.on('room:create', (ack) => {
+    const code = genUniqueRoomCode();
+    ensureRoom(code);
+    if (typeof ack === 'function') ack({ code });
   });
 
-  socket.on('join-room', ({ code, nickname }) => {
+  // Join must target an existing room code (prevents typos making new rooms)
+  socket.on('room:join', ({ code, name, uuid }) => {
     const room = rooms.get((code||'').toUpperCase());
-    if (!room) return socket.emit('error-msg','Room not found.');
-    if (room.phase!=='lobby') return socket.emit('error-msg','Game already started.');
-    const connected = Object.values(room.players).filter(p=>p.connected).length;
-    if (connected >= room.maxPlayers) return socket.emit('error-msg','Room is full.');
+    if (!room) { socket.emit('error:toast','Room not found. Ask host for the invite link or code.'); return; }
+
     socket.join(room.code);
-    room.players[socket.id] = { id: socket.id, nickname, connected:true, role:'unknown', card:null };
-    socket.emit('room-joined', { code: room.code });
-    broadcast(room);
-  });
 
-  socket.on('start-game', ({ code }) => {
-    const room = rooms.get((code||'').toUpperCase()); if (!room) return;
-    if (socket.id !== room.hostId) return socket.emit('error-msg','Only host can start.');
-    const active = Object.values(room.players).filter(p=>p.connected).map(p=>p.id);
-    if (active.length < 3) return socket.emit('error-msg','Need at least 3 players.');
+    if (!room.hostId) room.hostId = socket.id;
 
-    room.secretCard = randomCard();           // one shared player
-    room.impostorId = chooseImpostor(active); // pick impostor
-    room.phase = 'playing';
-
-    for (const pid of active){
-      const role = pid===room.impostorId ? 'impostor' : 'crewmate';
-      room.players[pid].role = role;
-      const cardForPlayer = role==='crewmate' ? room.secretCard : null; // impostor gets null
-      room.players[pid].card = cardForPlayer;
-      io.to(pid).emit('role', { role, card: cardForPlayer }); // private
-    }
-    broadcast(room);
-  });
-
-  socket.on('submit-hint', ({ code, text }) => {
-    const room = rooms.get((code||'').toUpperCase());
-    if (!room || room.phase!=='playing') return;
-    io.to(room.code).emit('hint', { id: crypto.randomUUID(), text: String(text||'').slice(0,160) });
-  });
-
-  socket.on('call-meeting', ({ code }) => {
-    const room = rooms.get((code||'').toUpperCase()); if (!room || room.phase!=='playing') return;
-    room.phase = 'meeting'; room.votes = {};
-    io.to(room.code).emit('meeting-start');
-    broadcast(room);
-  });
-
-  socket.on('cast-vote', ({ code, targetId }) => {
-    const room = rooms.get((code||'').toUpperCase()); if (!room || room.phase!=='meeting') return;
-    if (!room.players[targetId]) return;
-    room.votes[socket.id] = targetId;
-
-    const activeIds = Object.values(room.players).filter(p=>p.connected).map(p=>p.id);
-    io.to(room.code).emit('vote-update', { count: Object.values(room.votes).length, total: activeIds.length });
-
-    if (Object.values(room.votes).length >= activeIds.length){
-      const tally = {};
-      for (const v of Object.values(room.votes)) tally[v] = (tally[v]||0)+1;
-      let ejected=null, max=-1; for (const [pid,c] of Object.entries(tally)){ if (c>max){max=c; ejected=pid;} }
-      const impostorCaught = ejected === room.impostorId;
-      io.to(room.code).emit('meeting-result', { ejected, impostorCaught });
-
-      if (impostorCaught){
-        room.phase='ended';
-        io.to(room.code).emit('game-over', { winners:'crewmates', impostorId: room.impostorId });
-      } else {
-        if (room.players[ejected]) room.players[ejected].connected=false;
-        const remaining = Object.values(room.players).filter(p=>p.connected).length;
-        if (remaining < 3){
-          room.phase='ended';
-          io.to(room.code).emit('game-over', { winners:'impostor', impostorId: room.impostorId, reason:'not-enough-players' });
-        } else {
-          room.phase='playing';
-        }
+    if (uuid && room.uuidIndex.has(uuid)) {
+      const oldId = room.uuidIndex.get(uuid);
+      const p = room.players.get(oldId);
+      if (p) {
+        room.players.delete(oldId);
+        room.players.set(socket.id, { ...p, connected: true });
+        room.uuidIndex.set(uuid, socket.id);
       }
-      broadcast(room);
+    } else {
+      const player = { name: (name||'Player').slice(0,20), uuid: uuid || crypto.randomUUID(), connected: true };
+      room.players.set(socket.id, player);
+      room.uuidIndex.set(player.uuid, socket.id);
     }
+
+    socket.emit('room:joined', {
+      code: room.code,
+      you: { id: socket.id, name: room.players.get(socket.id).name, uuid: room.players.get(socket.id).uuid },
+      hostId: room.hostId,
+      phase: room.phase,
+      settings: room.settings,
+      players: publicPlayerList(room)
+    });
+    broadcastState(room);
   });
 
+  // Host
+  socket.on('host:start', ({ code }) => {
+    const room = rooms.get(code); if (!room) return;
+    if (socket.id !== room.hostId) return;
+    try { startGame(room); } catch (e) { socket.emit('error:toast', e.message); }
+  });
+  socket.on('host:endClues', ({ code }) => {
+    const room = rooms.get(code); if (!room) return;
+    if (socket.id !== room.hostId) return;
+    endClues(room);
+  });
+  socket.on('host:settings', ({ code, settings }) => {
+    const room = rooms.get(code); if (!room) return;
+    if (socket.id !== room.hostId) return;
+    room.settings = { ...room.settings, ...settings };
+    broadcastState(room);
+  });
+
+  // Clues/chat
+  socket.on('clue:send', ({ code, text }) => {
+    const room = rooms.get(code); if (!room || room.phase !== 'clues' || !room.settings.allowChat) return;
+    const player = room.players.get(socket.id); if (!player) return;
+    const clean = String(text||'').trim().slice(0,140); if (!clean) return;
+    io.to(code).emit('clue:new', { id: socket.id, name: player.name, text: clean });
+  });
+
+  // Voting
+  socket.on('vote:cast', ({ code, targetId }) => {
+    const room = rooms.get(code); if (!room || room.phase !== 'vote') return;
+    if (!room.players.has(targetId)) return;
+    room.votes.set(socket.id, targetId);
+    io.to(code).emit('vote:update', { votes: Array.from(room.votes.entries()) });
+    const connectedIds = Array.from(room.players.entries()).filter(([id,p]) => p.connected).map(([id])=>id);
+    const allVoted = connectedIds.every(id => room.votes.has(id));
+    if (allVoted) resolveVote(room);
+  });
+
+  // Disconnects
   socket.on('disconnect', () => {
-    for (const room of rooms.values()){
-      if (room.players[socket.id]){
-        room.players[socket.id].connected=false;
-        if (socket.id===room.hostId){
-          const next = Object.values(room.players).find(p=>p.connected);
-          if (next) room.hostId = next.id;
-        }
-        const active = Object.values(room.players).filter(p=>p.connected).length;
-        if (active === 0) {
-          rooms.delete(room.code);
-        } else if (room.phase!=='ended' && active < 3){
-          room.phase='ended';
-          io.to(room.code).emit('game-over', { winners:'impostor', reason:'not-enough-players' });
-        }
-        broadcast(room);
+    for (const room of rooms.values()) {
+      if (!room.players.has(socket.id)) continue;
+      const p = room.players.get(socket.id);
+      p.connected = false;
+
+      if (room.hostId === socket.id) {
+        const next = Array.from(room.players.entries()).find(([id,pl]) => pl.connected);
+        room.hostId = next ? next[0] : null;
       }
+      if (room.phase !== 'lobby' && room.impostorId === socket.id) {
+        room.phase = 'reveal';
+        io.to(room.code).emit('phase:reveal', {
+          impostorId: socket.id,
+          impostorName: p.name,
+          playerName: room.chosenPlayer,
+          impostorCaught: true,
+          reason: 'Impostor disconnected'
+        });
+      }
+      broadcastState(room);
+      break;
     }
   });
-
 });
 
 const PORT = process.env.PORT || 3000;
-httpServer.listen(PORT, () => console.log(`Server running http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`Soccer Impostor running on http://localhost:${PORT}`));
