@@ -26,7 +26,8 @@
           <button id="copyLink">Copy Link</button>
         </div>
         <button id="joinBtn" class="primary">Join</button>
-        <p class="hint">Host: click <b>Create</b> to get a code, you’ll auto-join. Share the link or code.</p>
+        <p class="hint">Host: click <b>Create</b> to get a code, you’ll 
+auto-join. Share the link or code.</p>
       </div>
     </section>
 
@@ -37,8 +38,10 @@
         <div id="hostTools" class="hidden">
           <div class="row">
             <label>Clue seconds</label>
-            <input id="clueSeconds" type="number" min="15" max="180" value="60" />
-            <label class="switch"><input id="allowChat" type="checkbox" checked>Allow Chat</label>
+            <input id="clueSeconds" type="number" min="15" max="180" 
+value="60" />
+            <label class="switch"><input id="allowChat" type="checkbox" 
+checked>Allow Chat</label>
           </div>
           <button id="start" class="primary">Start Game</button>
         </div>
@@ -59,12 +62,38 @@
           <h2>Clues</h2>
           <div id="timer">60</div>
         </div>
+
+        <div id="systemFeed" class="feed" 
+style="margin-bottom:8px;"></div>
         <div id="clueList" class="feed"></div>
-        <div class="row">
-          <input id="clueInput" placeholder="Drop a subtle clue…" maxlength="140" />
+
+        <div class="row" style="margin-top:8px;">
+          <input id="clueInput" placeholder="Drop a subtle clue…" 
+maxlength="140" />
           <button id="sendClue">Send</button>
         </div>
-        <div id="hostClues" class="hidden">
+
+        <div class="row" style="margin-top:8px;">
+          <div style="flex:1;">
+            <div style="font-size:14px; margin-bottom:6px;">Tasks</div>
+            <div style="background:#0b0f14;border:1px solid 
+#30363d;border-radius:10px;overflow:hidden;">
+              <div id="taskBar" 
+style="height:12px;width:0%;background:#27ae60;"></div>
+            </div>
+            <div id="taskNote" class="hint" 
+style="margin-top:4px;">Civilians tap "Do Task" to fill the bar. Impostor 
+can sabotage or kill.</div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:8px;">
+          <button id="btnTask" class="primary">Do Task +5%</button>
+          <button id="btnSabotage">Sabotage</button>
+          <button id="btnKill">Eliminate</button>
+        </div>
+
+        <div id="hostClues" class="hidden" style="margin-top:8px;">
           <button id="endClues">End Clues → Vote</button>
         </div>
       </div>
@@ -87,3 +116,4 @@
   </div>
 </body>
 </html>
+
